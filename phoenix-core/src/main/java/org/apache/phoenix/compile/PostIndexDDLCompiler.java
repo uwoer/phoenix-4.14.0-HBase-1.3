@@ -69,6 +69,10 @@ public class PostIndexDDLCompiler {
             PColumn col = indexPKColumns.get(i);
             String indexColName = col.getName().getString();
             // need to escape backslash as this used in the SELECT statement
+            // 源码中索引创建语句在执行过程中存在bug 参见：org.apache.phoenix.schema.ColumnRef.java中
+            // newColumnExpression(boolean schemaNameCaseSensitive, boolean colNameCaseSensitive)方法的逻辑
+            // 那个bug会导致这里取到dataColName是错误的
+            // 打个比方 修改之前的逻辑会导致expressionStr字段中存储的是basicinfo."id" 这是错误的正确的应该是"basicinfo"."id"
             String dataColName = StringUtil.escapeBackslash(col.getExpressionStr());
             dataColumns.append(dataColName).append(",");
             indexColumns.append('"').append(indexColName).append("\",");
