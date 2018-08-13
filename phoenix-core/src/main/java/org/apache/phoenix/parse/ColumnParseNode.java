@@ -95,6 +95,8 @@ public class ColumnParseNode extends NamedParseNode {
     public void toSQL(ColumnResolver resolver, StringBuilder buf) {
         // If resolver is not null, then resolve to get fully qualified name
         String tableName = null;
+        // 根据tableName的是否大小写敏感  初始化大小写敏感标识
+        boolean caseSensitive = isTableNameCaseSensitive();
         if (resolver == null) {
             if (this.tableName != null) {
                 tableName = this.tableName.getTableName();
@@ -107,7 +109,9 @@ public class ColumnParseNode extends NamedParseNode {
                     PTable table = ref.getTable();
                     String defaultFamilyName = table.getDefaultFamilyName() == null ? QueryConstants.DEFAULT_COLUMN_FAMILY : table.getDefaultFamilyName().getString();
                     // Translate to the data table column name
-                    String dataFamilyName = column.getFamilyName().getString() ;
+                    String dataFamilyName = column.getFamilyName().getString();
+                    // 根据列簇名是否大小写敏感  设置大小写敏感标识
+                    caseSensitive = dataFamilyName.equals(dataFamilyName.toLowerCase());
                     tableName = defaultFamilyName.equals(dataFamilyName) ? null : dataFamilyName;
                 }
                 
@@ -116,7 +120,8 @@ public class ColumnParseNode extends NamedParseNode {
             }
         }
         if (tableName != null) {
-            if (isTableNameCaseSensitive()) {
+            // 考虑表名称 和 列簇名称的大小写敏感
+            if (caseSensitive) {
                 buf.append('"');
                 buf.append(tableName);
                 buf.append('"');
