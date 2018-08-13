@@ -113,6 +113,11 @@ public class ColumnRef {
     public Expression newColumnExpression(boolean schemaNameCaseSensitive, boolean colNameCaseSensitive) throws SQLException {
         PTable table = tableRef.getTable();
         PColumn column = this.getColumn();
+        //加入列族大小写敏感的逻辑
+        if(!SchemaUtil.isPKColumn(column)){
+            String cf = column.getFamilyName().getString();
+            schemaNameCaseSensitive = cf.equals(cf.toLowerCase());
+        }
         String displayName = tableRef.getColumnDisplayName(this, schemaNameCaseSensitive, colNameCaseSensitive);
         if (SchemaUtil.isPKColumn(column)) {
             return new RowKeyColumnExpression(
