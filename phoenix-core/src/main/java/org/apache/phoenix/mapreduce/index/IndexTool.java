@@ -365,12 +365,8 @@ public class IndexTool extends Configured implements Tool {
         private Job configureJobForAysncIndex(String schemaName, String indexTable, String dataTable, boolean useDirectApi, boolean useSnapshot)
                 throws Exception {
             final String qDataTable = SchemaUtil.getQualifiedTableName(schemaName, dataTable);
-            final String qIndexTable;
-            if (schemaName != null && !schemaName.isEmpty()) {
-                qIndexTable = SchemaUtil.getQualifiedTableName(schemaName, indexTable);
-            } else {
-                qIndexTable = indexTable;
-            }
+            //转换为hbase语义化的名称
+            final String qIndexTable = SchemaUtil.getQualifiedTableName(schemaName, indexTable);
             final PTable pdataTable = PhoenixRuntime.getTable(connection, qDataTable);
             
             final PTable pindexTable = PhoenixRuntime.getTable(connection, qIndexTable);
@@ -398,20 +394,21 @@ public class IndexTool extends Configured implements Tool {
             final List<String> indexColumns = ddlCompiler.getIndexColumnNames();
             final String selectQuery = ddlCompiler.getSelectQuery();
             final String upsertQuery =
-                    QueryUtil.constructUpsertStatement(qIndexTable, indexColumns, Hint.NO_INDEX);
+                    QueryUtil.constructUpsertStatement(indexTable, indexColumns, Hint.NO_INDEX);
 
             configuration.set(PhoenixConfigurationUtil.UPSERT_STATEMENT, upsertQuery);
             PhoenixConfigurationUtil.setPhysicalTableName(configuration, physicalIndexTable);
             PhoenixConfigurationUtil.setDisableIndexes(configuration, indexTable);
             PhoenixConfigurationUtil.setUpsertColumnNames(configuration,
                 indexColumns.toArray(new String[indexColumns.size()]));
+            // indexTable 避免2次处理这里传入sql语义的名称
             final List<ColumnInfo> columnMetadataList =
-                    PhoenixRuntime.generateColumnInfo(connection, qIndexTable, indexColumns);
+                    PhoenixRuntime.generateColumnInfo(connection, indexTable, indexColumns);
             ColumnInfoToStringEncoderDecoder.encode(configuration, columnMetadataList);
             fs = outputPath.getFileSystem(configuration);
             fs.delete(outputPath, true);
- 
-            final String jobName = String.format(INDEX_JOB_NAME_TEMPLATE, schemaName, dataTable, indexTable);
+            //让格式化之后的任务名称好看
+            final String jobName = String.format(INDEX_JOB_NAME_TEMPLATE, schemaName, qDataTable, qIndexTable);
             final Job job = Job.getInstance(configuration, jobName);
             job.setJarByClass(IndexTool.class);
             job.setMapOutputKeyClass(ImmutableBytesWritable.class);
@@ -520,11 +517,22 @@ public class IndexTool extends Configured implements Tool {
                 printHelpAndExit(e.getMessage(), getOptions());
             }
             final Configuration configuration = HBaseConfiguration.addHbaseResources(getConf());
-            final String schemaName = cmdLine.getOptionValue(SCHEMA_NAME_OPTION.getOpt());
-            final String dataTable = cmdLine.getOptionValue(DATA_TABLE_OPTION.getOpt());
-            final String indexTable = cmdLine.getOptionValue(INDEX_TABLE_OPTION.getOpt());
+            String schemaName = cmdLine.getOptionValue(SCHEMA_NAME_OPTION.getOpt());
+            String dataTable = cmdLine.getOptionValue(DATA_TABLE_OPTION.getOpt());
+            String indexTable = cmdLine.getOptionValue(INDEX_TABLE_OPTION.getOpt());
+            // 还原大小写的语义 保证args中的schemaName，dataTable，indexTable的大小写语义  "abc" 和 abc 会转换为 "abc"
+            // "ABC" 和 ABC  会保留大写的语义 ABC
+            //sql 语义名称
+            schemaName = (schemaName != null && !schemaName.isEmpty()&&schemaName.equals(schemaName.toLowerCase()))?"\""+schemaName+"\"":schemaName;
+            //sql 语义名称
+            dataTable = dataTable.equals(dataTable.toLowerCase())?"\""+dataTable+"\"":dataTable;
+            //sql 语义名称
+            indexTable = indexTable.equals(indexTable.toLowerCase())?"\""+indexTable+"\"":indexTable;
             final boolean isPartialBuild = cmdLine.hasOption(PARTIAL_REBUILD_OPTION.getOpt());
+            //转换为hbase语义化的名称
             final String qDataTable = SchemaUtil.getQualifiedTableName(schemaName, dataTable);
+            //转换为hbase语义化的名称
+            final String qIndexTable = SchemaUtil.getQualifiedTableName(schemaName, indexTable);
             boolean useDirectApi = cmdLine.hasOption(DIRECT_API_OPTION.getOpt());
             String basePath=cmdLine.getOptionValue(OUTPUT_PATH_OPTION.getOpt());
             boolean isForeground = cmdLine.hasOption(RUN_FOREGROUND_OPTION.getOpt());
@@ -534,12 +542,14 @@ public class IndexTool extends Configured implements Tool {
             boolean isLocalIndexBuild = false;
             PTable pindexTable = null;
             if (indexTable != null) {
-                if (!isValidIndexTable(connection, qDataTable,indexTable)) {
-                    throw new IllegalArgumentException(String.format(
-                        " %s is not an index table for %s ", indexTable, qDataTable));
+                //因为isValidIndexTable方法中会对表名称进行hbase语义化处理 为了避免重复处理 所以这里传递sql语义的表名称
+                if (!isValidIndexTable(connection, dataTable,indexTable)) {
+                    //异常信息显示优化
+                    throw new IllegalArgumentException(String.format(" %s is not an index table for %s ", qIndexTable, qDataTable));
                 }
+                //传递hbase语义化后的名称   因为PhoenixRuntime.getTable()方法中没有再次对表名称进行hbase语义化处理
                 pindexTable = PhoenixRuntime.getTable(connection, schemaName != null && !schemaName.isEmpty()
-                        ? SchemaUtil.getQualifiedTableName(schemaName, indexTable) : indexTable);
+                        ? SchemaUtil.getQualifiedTableName(schemaName, indexTable) : qIndexTable);
                 htable = (HTable)connection.unwrap(PhoenixConnection.class).getQueryServices()
                         .getTable(pindexTable.getPhysicalName().getBytes());
                 if (IndexType.LOCAL.equals(pindexTable.getIndexType())) {
@@ -732,15 +742,18 @@ public class IndexTool extends Configured implements Tool {
     private boolean isValidIndexTable(final Connection connection, final String masterTable,
             final String indexTable) throws SQLException {
         final DatabaseMetaData dbMetaData = connection.getMetaData();
-        final String schemaName = SchemaUtil.getSchemaNameFromFullName(masterTable);
+        //获得hbase语义化后的表名称
+        final String schemaName = SchemaUtil.normalizeIdentifier(SchemaUtil.getSchemaNameFromFullName(masterTable));
         final String tableName = SchemaUtil.normalizeIdentifier(SchemaUtil.getTableNameFromFullName(masterTable));
-
+        //获得hbase语义化后的表名称
+        final String indexTableName = SchemaUtil.normalizeIdentifier(SchemaUtil.getTableNameFromFullName(indexTable));
         ResultSet rs = null;
         try {
             rs = dbMetaData.getIndexInfo(null, schemaName, tableName, false, false);
             while (rs.next()) {
                 final String indexName = rs.getString(6);
-                if (indexTable.equalsIgnoreCase(indexName)) {
+                //强校验
+                if (indexTableName.equals(indexName)) {
                     return true;
                 }
             }
