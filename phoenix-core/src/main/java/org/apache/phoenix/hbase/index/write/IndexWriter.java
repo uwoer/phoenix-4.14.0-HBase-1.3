@@ -29,6 +29,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.coprocessor.RegionCoprocessorEnvironment;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.phoenix.hbase.index.exception.IndexWriteException;
 import org.apache.phoenix.hbase.index.table.HTableInterfaceReference;
@@ -209,6 +210,7 @@ public class IndexWriter implements Stoppable {
         new HashMap<ImmutableBytesPtr, HTableInterfaceReference>(updates.size());
     for (Pair<Mutation, byte[]> entry : indexUpdates) {
       byte[] tableName = entry.getSecond();
+      LOG.debug("开始向"+Bytes.toString(tableName)+"插入索引...");
       ImmutableBytesPtr ptr = new ImmutableBytesPtr(tableName);
       HTableInterfaceReference table = tables.get(ptr);
       if (table == null) {

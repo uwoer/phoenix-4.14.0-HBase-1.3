@@ -3,6 +3,8 @@ package org.apache.phoenix;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.phoenix.hbase.index.util.ImmutableBytesPtr;
 import org.apache.phoenix.mapreduce.index.IndexTool;
 import org.apache.phoenix.mapreduce.util.ConnectionUtil;
 import org.apache.phoenix.query.QueryServices;
@@ -38,9 +40,18 @@ public class TestSql {
             connection = ConnectionUtil.getInputConnection(configuration);
 //            connection.createStatement().execute("create index VISIT_ID_INDEX on \"visits\"(\"id\")");
 //            connection.createStatement().execute("create index \"visits_id_index\" on \"visits\"(\"id\") INCLUDE(\"mobile\") ASYNC");
-            connection.createStatement().execute("create index \"visits_id_index\" on \"visits\"(\"id\") INCLUDE(\"mobile\")");
+//            connection.createStatement().execute("create index \"visits_id_index\" on \"visits\"(\"id\") INCLUDE(\"mobile\")");
+//            connection.createStatement().execute("explain select count(\"action_id\") as counts, substr(pk,0,10) as eventTime  from \"actions\" where  pk like '2018-03' and \"userId\" = 'FECAB64E-CBD1-4B06-934B-3367F74A43DF'  group by eventTime");
+//            connection.createStatement().execute("create view  MY_TABLE2 (PK  varchar primary key, CF1.V1 varchar, CF1.V2 varchar, CF1.V3 varchar)");
+//            connection.createStatement().execute("UPSERT INTO MY_TABLE1  VALUES('8','uwo8','8','8')");
+            connection.createStatement().execute("create index VISITS_LOCUS_IDX on \"visits\"(\"userId\",\"eventTime\") INCLUDE(\"id\",\"login_userId\",\"resolution\",\"model\",\"countryName\",\"city\",\"osVersion\",\"appVersion\",\"platform\") ASYNC");
+//            connection.createStatement().execute("UPSERT INTO MY_TABLE1(PK,V3)  VALUES('9','90')");
+//            connection.createStatement().execute("UPSERT INTO MY_TABLE  VALUES('1','uwo1','1','10')");
 //            connection.createStatement().execute("create index my_index5 on MY_TABLE(v3)");
 //            connection.createStatement().execute("SELECT  * FROM \"visits\" limit 10");
+//            byte[] qualifier = Bytes.toBytes("V3");
+//            ImmutableBytesPtr qualifierPtr = new ImmutableBytesPtr(qualifier);
+//            qualifierPtr.get();
             connection.commit();
         } catch (Exception e) {
             e.printStackTrace();

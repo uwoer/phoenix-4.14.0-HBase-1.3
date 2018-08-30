@@ -447,6 +447,7 @@ public class IndexMaintainer implements Writable, Iterable<ColumnReference> {
                 parseNode.accept(visitor);
                 parseNodes.add(parseNode);
             } catch (SQLException e) {
+                e.printStackTrace();
                 throw new RuntimeException(e);
             }
         }

@@ -600,6 +600,7 @@ public class PhoenixStatement implements Statement, SQLCloseable {
                 compilePlan = stmt.getConnection().getQueryServices().getOptimizer().optimize(stmt, dataPlan);
             }
             final StatementPlan plan = compilePlan;
+            // org.apache.phoenix.execute.BaseQueryPlan.getExplainPlan()
             List<String> planSteps = plan.getExplainPlan().getPlanSteps();
             List<Tuple> tuples = Lists.newArrayListWithExpectedSize(planSteps.size());
             Long estimatedBytesToScan = plan.getEstimatedBytesToScan();
@@ -1816,7 +1817,7 @@ public class PhoenixStatement implements Statement, SQLCloseable {
     
     @Override
     public boolean execute(String sql) throws SQLException {
-//        logger.info("execute=====>"+sql);
+        logger.debug("execute=====>"+sql);
         CompilableStatement stmt = parseStatement(sql);
         if (stmt.getOperation().isMutation()) {
             if (!batch.isEmpty()) {

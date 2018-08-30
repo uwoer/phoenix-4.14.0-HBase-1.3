@@ -1058,6 +1058,7 @@ public class MutationState implements SQLCloseable {
                 do {
                     TableRef origTableRef = tableInfo.getOrigTableRef();
                     PTable table = origTableRef.getTable();
+                    // 获取索引表信息
                     table.getIndexMaintainers(indexMetaDataPtr, connection);
                     final ServerCache cache = tableInfo.isDataTable() ? setMetaDataOnMutations(origTableRef,
                             mutationList, indexMetaDataPtr) : null;
@@ -1236,7 +1237,7 @@ public class MutationState implements SQLCloseable {
         return phoenixTransactionContext.encodeTransaction();
     }
 
-    private ServerCache setMetaDataOnMutations(TableRef tableRef, List<? extends Mutation> mutations,
+    public ServerCache setMetaDataOnMutations(TableRef tableRef, List<? extends Mutation> mutations,
             ImmutableBytesWritable indexMetaDataPtr) throws SQLException {
         PTable table = tableRef.getTable();
         final byte[] tenantIdBytes;

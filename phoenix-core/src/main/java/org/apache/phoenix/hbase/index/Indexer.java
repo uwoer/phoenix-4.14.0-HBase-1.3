@@ -17,51 +17,19 @@
  */
 package org.apache.phoenix.hbase.index;
 
-import static org.apache.phoenix.hbase.index.util.IndexManagementUtil.rethrowIndexingException;
-import static org.apache.phoenix.hbase.index.write.IndexWriterUtils.DEFAULT_INDEX_WRITER_RPC_PAUSE;
-import static org.apache.phoenix.hbase.index.write.IndexWriterUtils.DEFAULT_INDEX_WRITER_RPC_RETRIES_NUMBER;
-import static org.apache.phoenix.hbase.index.write.IndexWriterUtils.INDEX_WRITER_RPC_PAUSE;
-import static org.apache.phoenix.hbase.index.write.IndexWriterUtils.INDEX_WRITER_RPC_RETRIES_NUMBER;
-
-import java.io.IOException;
-import java.security.PrivilegedExceptionAction;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-
+import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.Cell;
-import org.apache.hadoop.hbase.CoprocessorEnvironment;
-import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.HConstants.OperationStatusCode;
-import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.KeyValueUtil;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.Durability;
-import org.apache.hadoop.hbase.client.Increment;
-import org.apache.hadoop.hbase.client.Mutation;
-import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.coprocessor.BaseRegionObserver;
 import org.apache.hadoop.hbase.coprocessor.ObserverContext;
 import org.apache.hadoop.hbase.coprocessor.RegionCoprocessorEnvironment;
-import org.apache.hadoop.hbase.ipc.RpcControllerFactory;
-import org.apache.hadoop.hbase.ipc.controller.InterRegionServerIndexRpcControllerFactory;
-import org.apache.hadoop.hbase.regionserver.InternalScanner;
-import org.apache.hadoop.hbase.regionserver.KeyValueScanner;
-import org.apache.hadoop.hbase.regionserver.MiniBatchOperationInProgress;
-import org.apache.hadoop.hbase.regionserver.OperationStatus;
-import org.apache.hadoop.hbase.regionserver.Region;
-import org.apache.hadoop.hbase.regionserver.ScanType;
-import org.apache.hadoop.hbase.regionserver.Store;
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
+import org.apache.hadoop.hbase.regionserver.*;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 import org.apache.hadoop.hbase.security.User;
@@ -72,6 +40,7 @@ import org.apache.htrace.Trace;
 import org.apache.htrace.TraceScope;
 import org.apache.phoenix.coprocessor.BaseScannerRegionObserver.ReplayWrite;
 import org.apache.phoenix.coprocessor.DelegateRegionCoprocessorEnvironment;
+import org.apache.phoenix.execute.MutationState;
 import org.apache.phoenix.hbase.index.LockManager.RowLock;
 import org.apache.phoenix.hbase.index.builder.IndexBuildManager;
 import org.apache.phoenix.hbase.index.builder.IndexBuilder;
@@ -87,17 +56,26 @@ import org.apache.phoenix.hbase.index.write.IndexWriter;
 import org.apache.phoenix.hbase.index.write.RecoveryIndexWriter;
 import org.apache.phoenix.hbase.index.write.recovery.PerRegionIndexWriteCache;
 import org.apache.phoenix.hbase.index.write.recovery.StoreFailuresInCachePolicy;
+import org.apache.phoenix.jdbc.PhoenixConnection;
+import org.apache.phoenix.mapreduce.util.ConnectionUtil;
 import org.apache.phoenix.query.QueryServicesOptions;
+import org.apache.phoenix.schema.PIndexState;
+import org.apache.phoenix.schema.PTable;
+import org.apache.phoenix.schema.PTableType;
+import org.apache.phoenix.schema.TableRef;
 import org.apache.phoenix.trace.TracingUtils;
 import org.apache.phoenix.trace.util.NullSpan;
 import org.apache.phoenix.util.EnvironmentEdgeManager;
-import org.apache.phoenix.util.PropertiesUtil;
+import org.apache.phoenix.util.PhoenixRuntime;
 import org.apache.phoenix.util.ScanUtil;
 import org.apache.phoenix.util.ServerUtil;
 import org.apache.phoenix.util.ServerUtil.ConnectionType;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
+import java.io.IOException;
+import java.security.PrivilegedExceptionAction;
+import java.util.*;
+
+import static org.apache.phoenix.hbase.index.util.IndexManagementUtil.rethrowIndexingException;
 
 /**
  * Do all the work of managing index updates from a single coprocessor. All Puts/Delets are passed
@@ -125,7 +103,7 @@ public class Indexer extends BaseRegionObserver {
   private static final Log LOG = LogFactory.getLog(Indexer.class);
   private static final OperationStatus IGNORE = new OperationStatus(OperationStatusCode.SUCCESS);
   private static final OperationStatus NOWRITE = new OperationStatus(OperationStatusCode.SUCCESS);
-  
+
 
   protected IndexWriter writer;
   protected IndexBuildManager builder;
@@ -375,9 +353,44 @@ public class Indexer extends BaseRegionObserver {
   public void preBatchMutateWithExceptions(ObserverContext<RegionCoprocessorEnvironment> c,
           MiniBatchOperationInProgress<Mutation> miniBatchOp) throws Throwable {
 
+      String tName = Bytes.toString(c.getEnvironment().getRegion().getTableDesc().getTableName().getName());
+      // 在表phoenix侧为视图时 社区版本的功能里  数据从hbase侧进入后索引表数据和主表数据的不同步
+      // 本次修改后  保证数据从hbase侧进入索引表数据和主表数据的同步
+
+      //本次修改 未能实现  表在phoenix侧为表的情况下数据由hbase侧进入时的索引表数据和主表数据的同步 待后续实现
+
+      // 综上 本次修改后 表在phoenix侧为表的下 数据一定需要通过phoenix 进出才能保证索引表数据和主表数据的同步
+      RegionServerServices services = c.getEnvironment().getRegionServerServices();
+      if (services instanceof HRegionServer) {
+//          ClusterConnection conn1 =  ServerUtil.ConnectionFactory.getConnection(ConnectionType.INDEX_WRITER_CONNECTION, c.getEnvironment().getConfiguration(),(HRegionServer) services);
+          PhoenixConnection conn = ConnectionUtil.getInputConnection(c.getEnvironment().getConfiguration()).unwrap(PhoenixConnection.class);
+          final PTable pdataTable = PhoenixRuntime.getTable(conn, tName);
+          boolean indexAble = false;
+          if(pdataTable.getType() == PTableType.VIEW){
+              for (PTable index : pdataTable.getIndexes()) {
+                  if (index.getIndexState().equals(PIndexState.ACTIVE)) {
+                      indexAble =true;
+                      break;
+                  }
+              }
+          }
+
+          if(indexAble){
+              ImmutableBytesWritable indexMetaDataPtr = new ImmutableBytesWritable();
+              pdataTable.getIndexMaintainers(indexMetaDataPtr, conn);
+              MutationState state = conn.getMutationState();
+              List<Mutation> mutationList = new ArrayList<Mutation>();
+              for (int i = 0; i < miniBatchOp.size(); i++) {
+                  Mutation m = miniBatchOp.getOperation(i);
+                  mutationList.add(m);
+              }
+              TableRef tableRef = new TableRef(pdataTable);
+              state.setMetaDataOnMutations(tableRef,mutationList,indexMetaDataPtr);
+          }
+      }
+
       // first group all the updates for a single row into a single update to be processed
-      Map<ImmutableBytesPtr, MultiMutation> mutationsMap =
-              new HashMap<ImmutableBytesPtr, MultiMutation>();
+      Map<ImmutableBytesPtr, MultiMutation> mutationsMap = new HashMap<ImmutableBytesPtr, MultiMutation>();
           
       Durability defaultDurability = Durability.SYNC_WAL;
       if(c.getEnvironment().getRegion() != null) {
@@ -401,12 +414,12 @@ public class Indexer extends BaseRegionObserver {
           }
           if (this.builder.isEnabled(m)) {
               context.rowLocks.add(lockManager.lockRow(m.getRow(), rowLockWaitDuration));
-              Durability effectiveDurablity = (m.getDurability() == Durability.USE_DEFAULT) ? 
+              Durability effectiveDurablity = (m.getDurability() == Durability.USE_DEFAULT) ?
                       defaultDurability : m.getDurability();
               if (effectiveDurablity.ordinal() > durability.ordinal()) {
                   durability = effectiveDurablity;
               }
-              // Track whether or not we need to 
+              // Track whether or not we need to
               ImmutableBytesPtr row = new ImmutableBytesPtr(m.getRow());
               if (mutationsMap.containsKey(row)) {
                   copyMutations = true;
@@ -431,7 +444,7 @@ public class Indexer extends BaseRegionObserver {
           originalMutations = Lists.newArrayListWithExpectedSize(mutationsMap.size());
           mutations = originalMutations;
       }
-      
+
       Mutation firstMutation = miniBatchOp.getOperation(0);
       ReplayWrite replayWrite = this.builder.getReplayWrite(firstMutation);
       boolean resetTimeStamp = replayWrite == null;
@@ -503,8 +516,7 @@ public class Indexer extends BaseRegionObserver {
           long start = EnvironmentEdgeManager.currentTimeMillis();
 
           // get the index updates for all elements in this batch
-          Collection<Pair<Mutation, byte[]>> indexUpdates =
-                  this.builder.getIndexUpdate(miniBatchOp, mutations);
+          Collection<Pair<Mutation, byte[]>> indexUpdates =this.builder.getIndexUpdate(miniBatchOp, mutations);
 
 
           long duration = EnvironmentEdgeManager.currentTimeMillis() - start;
@@ -667,7 +679,7 @@ public class Indexer extends BaseRegionObserver {
   @Override
   public void postOpen(final ObserverContext<RegionCoprocessorEnvironment> c) {
     Multimap<HTableInterfaceReference, Mutation> updates = failedIndexEdits.getEdits(c.getEnvironment().getRegion());
-    
+
     if (this.disabled) {
         super.postOpen(c);
         return;

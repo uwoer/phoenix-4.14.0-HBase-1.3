@@ -600,7 +600,7 @@ public class IndexTool extends Configured implements Tool {
                     loader.doBulkLoad(outputPath, htable);
                     htable.close();
                     // Without direct API, we need to update the index state to ACTIVE from client.
-                    IndexToolUtil.updateIndexState(connection, qDataTable, indexTable, PIndexState.ACTIVE);
+                    IndexToolUtil.updateIndexState(connection, dataTable, indexTable, PIndexState.ACTIVE);
                     fs.delete(outputPath, true);
                 }
                 return 0;
