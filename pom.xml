@@ -24,7 +24,7 @@
 
   <modules>
     <module>phoenix-core</module>
-    <module>phoenix-flume</module>
+    <!--<module>phoenix-flume</module>
     <module>phoenix-kafka</module>
     <module>phoenix-pig</module>
     <module>phoenix-queryserver-client</module>
@@ -32,11 +32,11 @@
     <module>phoenix-pherf</module>
     <module>phoenix-spark</module>
     <module>phoenix-hive</module>
-    <module>phoenix-client</module>
+    <module>phoenix-client</module>-->
     <module>phoenix-server</module>
     <module>phoenix-assembly</module>
-    <module>phoenix-tracing-webapp</module>
-    <module>phoenix-load-balancer</module>
+    <!--<module>phoenix-tracing-webapp</module>
+    <module>phoenix-load-balancer</module>-->
   </modules>
 
   <repositories>
@@ -743,10 +743,10 @@
         </exclusions>
       </dependency>
       <dependency>
-        <groupId>org.apache.calcite.avatica</groupId>
-        <artifactId>avatica</artifactId>
-        <version>${avatica.version}</version>
-      </dependency>
+      <groupId>org.apache.calcite.avatica</groupId>
+      <artifactId>avatica</artifactId>
+      <version>${avatica.version}</version>
+    </dependency>
       <dependency>
         <groupId>org.apache.calcite.avatica</groupId>
         <artifactId>avatica-core</artifactId>
